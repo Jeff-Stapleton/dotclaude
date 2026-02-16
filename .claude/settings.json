@@ -1,0 +1,16 @@
+{
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay /Users/jeffstapleton/Downloads/zelda-navi-listen.mp3&"
+          }
+        ]
+      }
+    ]
+  }
+}
