@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "afplay /Users/jeffstapleton/Downloads/zelda-navi-listen.mp3&"
+            "command": "afplay /Users/jeffstapleton/Documents/Github/dotclaude/.claude/sounds/zelda-navi-listen.mp3&"
           }
         ]
       }
