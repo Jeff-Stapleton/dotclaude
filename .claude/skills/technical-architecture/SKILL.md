@@ -415,3 +415,23 @@ NFR ID | NFR Description | Component(s) | Verification Method}
 - If the PRB mentions specific performance numbers (e.g., "loads within 2 seconds"), those MUST appear as NFRs with corresponding architectural decisions.
 - Security and compliance requirements are never optional — always extract and address them even if understated in the PRB.
 - When the PRB has "Open Questions" that affect architecture, note them as architectural risks with recommended resolution approaches.
+
+---
+
+## Phase 6: Update CLAUDE.md for Future Agent Reference
+
+After generating the technical architecture document, update the project's `CLAUDE.md` file with a concise summary of the tech stack and architecture so that future agents have immediate context.
+
+### Steps
+
+1. **Read the existing `CLAUDE.md`** in the repository root. If it does not exist, create it.
+2. **Add or update** a `## Tech Stack & Architecture` section with the following:
+   - **Architecture style** (e.g., modular monolith, microservices)
+   - **Frontend**: framework, language, key libraries
+   - **Backend**: language, framework, API style
+   - **Data layer**: databases, caches, message queues
+   - **Infrastructure**: cloud provider, orchestration, CI/CD
+   - **Key patterns**: (e.g., hexagonal architecture, event-driven, CQRS)
+   - **Link to the full technical architecture document** (relative path)
+3. **Preserve all existing content** in `CLAUDE.md` — only add or replace the `## Tech Stack & Architecture` section. Do not modify any other sections.
+4. **Keep it concise** — this section should be a quick-reference summary (under 40 lines), not a duplicate of the full architecture document. Future agents should be able to glance at it and understand what technologies are in play and where to find details.
