@@ -107,10 +107,11 @@ STEPS (do these in order, no extra exploration):
 2. Generate the spec following the template exactly. Key rules:
    - Copy requirement details VERBATIM from the PRB — user stories, acceptance criteria, competitive justification
    - Map to specific technical architecture sections by reference
-   - Include concrete file paths from Section 4.3
+   - Include concrete file paths from Section 4.3, ALWAYS prefixed with the target repo name (e.g., `operations-back-end/internal/task/`, `wingman/apps/mobile/src/components/`)
    - Reference tech stack choices with justifications
    - Dependencies: [LIST-OF-DEPENDENCY-SPEC-IDS]
    - Priority: [PRIORITY]
+   - If this spec spans multiple priorities (e.g., P0/P1), include a "## Phase Scope" section near the top that separates requirements, components, endpoints, and file paths by phase. Each phase subsection should be self-contained so an implementing agent can read only their phase.
    - Leave the "Architecture Review" and "Product Manager Review" sections with placeholder text: "Pending review."
 3. Write the completed spec to: specs/[SUBDIR]/[FILENAME]
 
@@ -140,6 +141,34 @@ Include these instructions in every spec generation prompt:
 4. **Reference tech stack choices** from tech-stack-preferences.md and the technology stack table (Section 4.1) with their justifications.
 5. **Identify cross-spec dependencies** — which other specs must be implemented first.
 6. **Architecture specs** should focus on infrastructure, patterns, and cross-cutting concerns rather than user-facing features. Reference specific NFR IDs and decision log entries (Section 13).
+7. **Phase scope isolation** — For specs that span multiple priorities (e.g., P0/P1), include a `## Phase Scope` section near the top of the spec that clearly separates requirements by phase. Each phase subsection lists ONLY the requirement IDs, components, endpoints, and file paths for that phase. This allows an implementing agent to read just the relevant phase without parsing the entire spec.
+
+   Example structure:
+   ```
+   ## Phase Scope
+
+   ### P0 Scope
+   - **Requirements:** MN-006
+   - **Components:** PerformanceMonitor, CacheManager
+   - **Endpoints:** GET /api/v1/metrics
+   - **File Paths:** internal/perf/, pkg/api/metrics/
+
+   ### P1 Scope
+   - **Requirements:** MN-007
+   - **Components:** OfflineSyncEngine, ConflictResolver
+   - **Endpoints:** POST /api/v1/sync
+   - **File Paths:** internal/sync/, pkg/offline/
+   ```
+
+8. **Repo mapping** — Every file path in the spec MUST be prefixed with its target repository. Use these path-to-repo conventions (adjust if the project's repo mapping table differs):
+
+   | Path Pattern | Repo |
+   |---|---|
+   | `internal/`, `pkg/`, `cmd/` | operations-back-end |
+   | `apps/mobile/src/` | wingman |
+   | `apps/web/src/` | ops-fe |
+
+   If the project provides a different mapping, use that instead. The key rule: an implementing agent must never have to guess which repo a file path belongs to.
 
 ### Phase 3: Dual-Agent Review
 
@@ -223,20 +252,71 @@ Process reviews in these sequential batches. For each batch, spawn BOTH reviewer
 
 #### Review Merge Step
 
-After EACH review batch completes, merge the reviews into the spec files:
+After EACH review batch completes, link reviews from the spec files (do NOT embed full review content — this saves ~40% of each spec's token cost):
 
-1. For each spec in the completed batch, read the two review files:
+1. For each spec in the completed batch, read ONLY the first 3 lines of each review file to extract the Status line:
    - `specs/reviews/[SPEC-ID]-arch-review.md`
    - `specs/reviews/[SPEC-ID]-pm-review.md`
-2. Edit the spec file to replace the "Architecture Review" placeholder section with the arch review content.
-3. Edit the spec file to replace the "Product Manager Review" placeholder section with the PM review content.
-4. Track the review status (Approved / Approved with Concerns / Needs Revision) for each spec — you will need this for the implementation plan.
+2. Edit the spec file to replace the "Architecture Review" placeholder with a one-line link and status:
+   ```
+   **Status:** [Approved / Approved with Concerns / Needs Revision]
+   See [Architecture Review](../reviews/[SPEC-ID]-arch-review.md) for full findings.
+   ```
+3. Edit the spec file to replace the "Product Manager Review" placeholder with a same-format link:
+   ```
+   **Status:** [Approved / Approved with Concerns / Needs Revision]
+   See [Product Manager Review](../reviews/[SPEC-ID]-pm-review.md) for full findings.
+   ```
+4. Track the review status for each spec — you will need this for the implementation plan.
 
-**Important:** Do NOT read the full spec file during merge. Use the Edit tool to do targeted replacements of just the review placeholder sections. This keeps your context small.
+**Important:** Do NOT read full review files or full spec files during merge. Read only the status line from reviews, then use the Edit tool for targeted replacement of placeholder sections. This keeps your context small and avoids wasting tokens on review content that already exists in dedicated files.
 
 ### Phase 4: Generate Implementation Plan
 
-After all specs are written and reviewed, create `specs/IMPLEMENTATION-PLAN.md` with:
+After all specs are written and reviewed, create `specs/IMPLEMENTATION-PLAN.md` with the sections below.
+
+#### Agent Workflow Protocol
+
+The implementation plan MUST begin with an agent workflow section that tells implementing agents exactly how to operate. Include this at the top of the plan:
+
+```markdown
+## Agent Workflow
+
+### Repo Mapping
+
+| Path Pattern | Repo | CLAUDE.md |
+|---|---|---|
+| `internal/`, `pkg/`, `cmd/` | operations-back-end | operations-back-end/CLAUDE.md |
+| `apps/mobile/src/` | wingman | wingman/CLAUDE.md |
+| `apps/web/src/` | ops-fe | ops-fe/CLAUDE.md |
+
+### How to Pick a Task
+
+1. Read this implementation plan and find the first unchecked item (`- [ ]`) in the lowest-numbered phase.
+2. Verify all its dependencies (listed after "Depends on:") are checked off (`- [x]`).
+3. If multiple unchecked items are available, work them **in the order listed** — items are ordered by priority within each phase.
+4. If the task spans multiple repos (backend + frontend), complete backend first, then frontend, unless the spec says otherwise.
+
+### How to Execute a Task
+
+1. Open the linked spec file. If the spec has a `## Phase Scope` section, read ONLY the subsection for the current phase — skip other phases.
+2. Check the repo mapping table above. All file paths in the spec are prefixed with their target repo.
+3. Read the target repo's CLAUDE.md for conventions (branch naming, commit messages, architecture rules).
+4. Implement the requirements. Run tests. Ensure acceptance criteria from the spec pass.
+
+### How to Mark Completion
+
+1. Commit and push your changes following the repo's conventions.
+2. Edit this file: change `- [ ]` to `- [x]` for the completed item.
+3. If only some requirements within a multi-priority spec are done (e.g., P0 but not P1), mark ONLY the specific phase entry — do not mark the other phase's entry.
+
+### Avoiding Collisions
+
+- Before starting work, check if the spec's checkbox is still unchecked — another agent may have claimed it.
+- Use descriptive branch names: `feat/[SPEC-ID]-[short-description]` (e.g., `feat/SPEC-F05-p1-manual-references`).
+```
+
+Adjust the repo mapping table to match the actual repos discovered in the source documents.
 
 #### Dependency Graph
 
@@ -289,7 +369,7 @@ graph LR
 
 #### Phased Execution
 
-Organize specs into phases matching PRB priority:
+Organize specs into phases matching PRB priority. **Items within each phase are numbered in execution order** — agents should work them in the listed sequence.
 
 **Phase 0: Foundation (Architecture)**
 - Infrastructure, data architecture, security, CI/CD, observability
@@ -305,6 +385,7 @@ Organize specs into phases matching PRB priority:
 - F02 offline completion (MN-007)
 - F03 voice/dark mode (MN-009, MN-010)
 - F04 planner/director dashboards (TO-002, TO-003)
+- F05 P1 completion items (TO-007)
 - F06 planner workflow (TO-009)
 - F07 data import (TV-003)
 - F08 free pilot (TV-006)
@@ -314,20 +395,151 @@ Organize specs into phases matching PRB priority:
 - F09, F10 AI features
 - F12 Knowledge capture
 
-Each spec entry in the implementation plan includes:
-- Checkbox for tracking (`- [ ]`)
-- Spec ID and name
-- Link to spec file (relative path)
-- Dependencies listed
-- Review status summary (from both agents — use the status you tracked during merge)
+#### Spec Entry Format
+
+Each spec entry in the implementation plan MUST use this format:
+
+```markdown
+- [ ] **1. SPEC-A01** — [Data Architecture & Multi-Tenancy](architecture/a01-data-architecture.md)
+  - **Depends on:** None
+  - **Review:** Arch: Approved | PM: Approved with Concerns
+```
+
+For multi-priority specs that appear in multiple phases, use separate entries per phase with a "What Exists" field in later phases:
+
+```markdown
+- [ ] **3. SPEC-F05 (P1)** — [Progressive Disclosure: TO-007](functional/f05-progressive-disclosure.md#p1-scope)
+  - **Depends on:** SPEC-F01 (P0), SPEC-F05 (P0)
+  - **What Exists (from P0):** StepSequencer, InlineHelp, ErrorBanner, GET /api/v1/help/
+  - **New This Phase:** ManualReferenceLink, ManualReferenceExpander, GET /api/v1/manuals/
+  - **Review:** Arch: Approved | PM: Approved
+```
+
+The "What Exists" and "New This Phase" fields tell implementing agents exactly what's already built and what delta work remains, so they don't need to read the full spec history or explore the codebase to determine current state.
+
+### Phase 5: Generate Spec Summary Index
+
+After the implementation plan is complete, create `specs/SPEC-INDEX.md` — a lightweight summary that lets agents understand the full landscape without opening 25 files.
+
+Use this format:
+
+```markdown
+# Spec Index
+
+Quick-reference summary of all 25 specs. Read the linked spec for full details.
+
+| Spec ID | Name | Priority | Phase | Arch Review | PM Review | Depends On |
+|---------|------|----------|-------|-------------|-----------|------------|
+| SPEC-A01 | [Data Architecture](architecture/a01-data-architecture.md) | Foundation | 0 | Approved | Approved | None |
+| SPEC-F05 | [Progressive Disclosure](functional/f05-progressive-disclosure.md) | P0/P1 | 1, 2 | Approved with Concerns | Approved | SPEC-F01, SPEC-TS05 |
+| ... | ... | ... | ... | ... | ... | ... |
+```
+
+Include all 25 specs in the table, sorted by phase then by execution order within phase.
+
+### Cross-Cutting Concerns
+
+After the spec index, add a `## Cross-Cutting Concerns` section to the implementation plan that captures patterns every implementing agent should know — things that apply across multiple specs. Examples:
+
+- Tenant isolation (RLS) must be present in every data-touching spec
+- All API endpoints require JWT auth per Section 7.1
+- Audit logging is required for all write operations
+- Offline-capable features must follow Section 8 sync patterns
+
+Pull these from the architecture specs and review findings. This prevents agents from making the same mistakes across different specs.
+
+### Phase 6: Generate or Update CLAUDE.md
+
+After the implementation plan and spec index are complete, create or update the project's root `CLAUDE.md` file. This is the **first file any agent reads** when entering the repo, so it must orient them to the current state of the project, point them to the right documents, and tell them how to work.
+
+If a `CLAUDE.md` already exists, preserve any existing content that is still accurate (project description, tech stack, coding conventions, etc.) and add/update the sections below. If no `CLAUDE.md` exists, create one from scratch.
+
+The `CLAUDE.md` MUST include these sections:
+
+```markdown
+# [Project Name]
+
+[One-paragraph project description pulled from the foundational documents.]
+
+## Current State
+
+This repository has been through the refinement pipeline. The `specs/` directory contains
+[N] implementation-ready specifications, reviewed by architecture and product agents.
+
+**Implementation status:** See [IMPLEMENTATION-PLAN.md](specs/IMPLEMENTATION-PLAN.md) for the
+full phased execution plan with checkboxes tracking progress.
+
+**Quick reference:** See [SPEC-INDEX.md](specs/SPEC-INDEX.md) for a one-line summary of every spec.
+
+## Getting Started (for Agents)
+
+1. Read this file first.
+2. Open [specs/IMPLEMENTATION-PLAN.md](specs/IMPLEMENTATION-PLAN.md) and follow the
+   **Agent Workflow** section at the top — it tells you how to pick a task, execute it,
+   and mark it done.
+3. Each spec has a `## Phase Scope` section if it spans multiple priorities — read only
+   the phase you're working on.
+4. Review files live in `specs/reviews/` — consult them if you need context on architectural
+   decisions or product constraints for a spec.
+
+## Repo Mapping
+
+| Path Pattern | Repo | Description |
+|---|---|---|
+| `internal/`, `pkg/`, `cmd/` | operations-back-end | Go backend services |
+| `apps/mobile/src/` | wingman | React Native mobile app |
+| `apps/web/src/` | ops-fe | React web frontend |
+
+## Key Conventions
+
+[Pull from tech-stack-preferences.md and technical-architecture.md. Include:]
+- Language/framework versions
+- Architecture pattern (e.g., hexagonal architecture)
+- Branch naming: `feat/[SPEC-ID]-[short-description]`
+- Commit message format
+- Test requirements
+- Any linting/formatting rules
+
+## Cross-Cutting Rules
+
+[Copy the cross-cutting concerns from the implementation plan — these are the rules
+every agent must follow regardless of which spec they're implementing:]
+- Tenant isolation (RLS) on every data-touching operation
+- JWT auth on all API endpoints
+- Audit logging on all write operations
+- Offline-first patterns for mobile-touching features
+- [Any other patterns identified during reviews]
+
+## Directory Structure
+
+[Brief overview of the repo layout, highlighting the specs/ directory:]
+
+specs/                    # Implementation specs and reviews
+  IMPLEMENTATION-PLAN.md  # Master plan with checkboxes — start here
+  SPEC-INDEX.md           # Quick-reference table of all specs
+  reviews/                # Architecture and PM review files
+  architecture/           # Cross-cutting infrastructure specs
+  table-stakes/           # Domain-specific baseline specs
+  functional/             # Feature/epic-level specs
+```
+
+**Important rules for CLAUDE.md generation:**
+
+1. **Keep it concise.** This file should be under 150 lines. It's an orientation document, not a comprehensive reference — link to other files for details.
+2. **Use relative paths** for all links so they work regardless of where the repo is cloned.
+3. **Pull real values** from the source documents — don't use placeholder text like "[insert here]". Fill in actual tech stack versions, actual conventions, actual cross-cutting rules.
+4. **The repo mapping table** must match the one in the implementation plan's Agent Workflow section. If the source documents reveal different or additional repos, include them all.
+5. **If a CLAUDE.md already exists**, read it first. Merge new content with existing content — don't overwrite repo-specific conventions, contributor guidelines, or other sections that the refinement pipeline didn't generate.
 
 ### Output Expectations
 
-When complete, the `specs/` directory should contain:
+When complete, the project should contain:
 
 ```
+CLAUDE.md                 # Agent entry point — created or updated
 specs/
   IMPLEMENTATION-PLAN.md
+  SPEC-INDEX.md
   reviews/
     [SPEC-ID]-arch-review.md  (25 files)
     [SPEC-ID]-pm-review.md    (25 files)
@@ -361,6 +573,6 @@ specs/
     a05-security-architecture.md
 ```
 
-Total: 76 files (25 specs + 50 review files + 1 implementation plan).
+Total: 78 files (25 specs + 50 review files + 1 implementation plan + 1 spec index + 1 CLAUDE.md).
 
-Every spec must have both review sections populated before the pipeline is considered complete.
+Every spec must have both review link sections populated, and the root CLAUDE.md must exist and point to the implementation plan, before the pipeline is considered complete.
