@@ -100,7 +100,7 @@ Classify each gap as:
 
 ### Phase 4 — Generate Report
 
-Write a comprehensive markdown report following the template below. Save it to `competitor-analysis-report.md` in the current working directory using the `Write` tool.
+Write a comprehensive markdown report following the template below. Save it to `specs/competitor-analysis-report.md` (creating the `specs/` directory if it doesn't exist) using the `Write` tool.
 
 After writing, inform the user that the report has been saved and provide a brief summary of the key findings.
 
@@ -269,4 +269,29 @@ If there are many competitors (>10 found):
 - **Prioritize recency** — Weight recent feedback (2024-2026) more heavily than older complaints that may be resolved.
 - **Include positive signals** — Note what competitors do well, not just their failures. Understanding strengths is as important as finding gaps.
 - **Stay in scope** — Research the product type and audience specified. Don't expand scope without asking.
-- **Always save the report** — The final deliverable is `competitor-analysis-report.md` written to the current directory.
+- **Always save the report** — The final deliverable is `specs/competitor-analysis-report.md`.
+
+---
+
+## Post-Report: Update CLAUDE.md
+
+After the report is saved, update the project's `CLAUDE.md` file (create it if it doesn't exist) with a **Market Research** section. This ensures the competitive insights are discoverable and linked for future reference.
+
+**Steps:**
+
+1. Read the existing `CLAUDE.md` in the project root (if it exists).
+2. If a `## Market Research` section already exists, update it. Otherwise, append the section to the end of the file.
+3. Write the following section:
+
+```markdown
+## Market Research
+
+- [Competitor Analysis: {Product Name}](specs/competitor-analysis-report.md) — {one-sentence summary of key finding or biggest opportunity} ({current date})
+```
+
+4. If multiple analyses have been run, append new entries as additional list items under the existing `## Market Research` section rather than replacing previous entries.
+
+**Important:**
+- Do not overwrite other sections in `CLAUDE.md` — only add or update the `## Market Research` section.
+- Preserve all existing content in the file.
+- Inform the user that `CLAUDE.md` has been updated with a link to the report.
