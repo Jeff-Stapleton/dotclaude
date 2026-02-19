@@ -1,6 +1,6 @@
-# QA Skill — TDD via Prototype + Playwright
+# QA Skill — TDD via App + Playwright
 
-Scaffold the actual application as a working prototype using existing Storybook components and referenceing Storybook on how the pages should look, then generate a comprehensive Playwright E2E test suite against it. The prototype becomes the real app as features are implemented; the tests become the regression safety net.
+Scaffold the application using existing Storybook components and referencing Storybook on how the pages should look, then generate a comprehensive Playwright E2E test suite against it. The tests become the regression safety net.
 
 ## Argument Handling
 
@@ -67,7 +67,7 @@ Run these five phases sequentially. **Do not skip phases.**
     "language": "typescript",
     "buildTool": "vite",
     "navigation": "react-router-dom",
-    "prototypeTarget": "web"
+    "target": "web"
   },
   "navigationGraph": {
     "Login": ["FlightBoard"],
@@ -121,18 +121,18 @@ Total: 15 pages | 118 states | 24 flows
 
 ---
 
-### Phase 2 — Scaffold Prototype & Playwright Infrastructure
+### Phase 2 — Scaffold App & Playwright Infrastructure
 
 **Goal:** Create the application shell, mock API layer, navigation routing, and Playwright configuration. This phase stays in the main agent context — it's small config work.
 
-#### 2a. Prototype App Shell
+#### 2a. App Shell
 
-The prototype is a **web application** that imports existing components from `libs/` and wires them together with real navigation and mock data. It runs in a browser so Playwright can test it.
+The app is a **web application** that imports existing components from `libs/` and wires them together with real navigation and mock data. It runs in a browser so Playwright can test it.
 
 1. Read the existing project configuration (`package.json`, `tsconfig.json`, `vite.config.ts` or equivalent) to understand the build setup
-2. Create the prototype app directory:
+2. Create the app directory:
    ```
-   apps/prototype/
+   app/
    ├── index.html
    ├── vite.config.ts          # Vite config with path aliases matching libs/
    ├── tsconfig.json            # Extends root tsconfig
@@ -148,10 +148,10 @@ The prototype is a **web application** that imports existing components from `li
    │   │   └── AppShell.tsx     # Navigation chrome (sidebar, header, breadcrumbs)
    │   └── screens/             # Thin screen wrappers (populated in Phase 3)
    │       └── .gitkeep
-   └── package.json             # Prototype-specific deps (react-router-dom, msw)
+   └── package.json             # App-specific deps (react-router-dom, msw)
    ```
 
-3. Key decisions for the prototype:
+3. Key decisions for the app:
    - Use **Vite** as the dev server (it's already used by Storybook in this project)
    - Use **react-router-dom** for navigation (web-compatible, Playwright-friendly)
    - Use **MSW (Mock Service Worker)** or simple React context for mock data — whichever is simpler given the existing components
@@ -159,15 +159,15 @@ The prototype is a **web application** that imports existing components from `li
    - The app shell should include: a navigation sidebar listing all pages, a header with the current page title, and a connectivity status indicator
 
 4. Add scripts to root `package.json`:
-   - `"prototype": "vite dev --config apps/prototype/vite.config.ts"`
-   - `"prototype:build": "vite build --config apps/prototype/vite.config.ts"`
+   - `"dev": "vite dev --config app/vite.config.ts"`
+   - `"build": "vite build --config app/vite.config.ts"`
 
 #### 2b. Playwright Configuration
 
 1. Create the Playwright infrastructure:
    ```
    e2e/
-   ├── playwright.config.ts     # Points at prototype dev server
+   ├── playwright.config.ts     # Points at app dev server
    ├── tsconfig.json
    ├── fixtures/
    │   ├── base.ts              # Extended test fixture with page helpers
@@ -182,9 +182,9 @@ The prototype is a **web application** that imports existing components from `li
    ```
 
 2. `playwright.config.ts` must:
-   - Start the prototype dev server via `webServer` config
+   - Start the app dev server via `webServer` config
    - Configure projects for: chromium (desktop 1440px), webkit (tablet 768px)
-   - Set base URL to the prototype dev server
+   - Set base URL to the app dev server
    - Enable screenshots on failure
    - Set reasonable timeouts (30s for navigation, 10s for assertions)
 
@@ -204,15 +204,15 @@ The prototype is a **web application** that imports existing components from `li
 Read `qa-manifest.json`. For each page entry, launch a **Task subagent** (`subagent_type: "general-purpose"`) with this prompt template:
 
 ```
-You are building a prototype screen for a Breeze Airways operations app.
+You are building a screen for a Breeze Airways operations app.
 
 READ THESE FILES FIRST:
-1. {path to prototype-patterns.md reference file} — Screen wrapper conventions
+1. {path to screen-patterns.md reference file} — Screen wrapper conventions
 2. {componentPath from manifest} — The existing component to wrap
 3. {storyPath from manifest} — Mock data factories to reuse
 4. {path to PRB} lines {prbLineRange[0]}-{prbLineRange[1]} — Requirements context
 
-BUILD a screen wrapper at: apps/prototype/src/screens/{PageName}Screen.tsx
+BUILD a screen wrapper at: app/src/screens/{PageName}Screen.tsx
 
 The screen wrapper MUST:
 1. Import the {PageName} component from its library path
@@ -225,7 +225,7 @@ The screen wrapper MUST:
 4. Manage local state for interactive elements (step progression, form state, selections)
 5. Support URL params where appropriate (e.g., /passengers/:pnr, /flights/:flightNumber)
 
-Also UPDATE the routes file at apps/prototype/src/routes.tsx to add the route for this screen.
+Also UPDATE the routes file at app/src/routes.tsx to add the route for this screen.
 
 Page details:
 - Name: {name}
@@ -267,7 +267,7 @@ You are writing Playwright E2E tests for a Breeze Airways operations app.
 
 READ THESE FILES FIRST:
 1. {path to test-patterns.md reference file} — Test conventions and patterns
-2. apps/prototype/src/screens/{PageName}Screen.tsx — The screen to test
+2. app/src/screens/{PageName}Screen.tsx — The screen to test
 3. e2e/fixtures/base.ts — Base test fixtures and helpers
 
 BUILD two files:
@@ -316,18 +316,18 @@ Return ONLY this line: DONE: {name} — {N} tests across {M} categories
 
 ### Phase 5 — Validate and Report
 
-**Goal:** Verify the prototype builds, Playwright tests are syntactically valid, and produce a coverage report.
+**Goal:** Verify the app builds, Playwright tests are syntactically valid, and produce a coverage report.
 
-1. **Build check:** Run `npx vite build --config apps/prototype/vite.config.ts` (or equivalent) to check for compilation errors in the prototype
+1. **Build check:** Run `npx vite build --config app/vite.config.ts` (or equivalent) to check for compilation errors
 2. **Type check:** Run `npx tsc --noEmit -p e2e/tsconfig.json` to validate test files compile
 3. **List tests:** Run `npx playwright test --list` to enumerate all discovered tests
-4. **Attempt a test run:** Run `npx playwright test --reporter=list` — if the prototype server starts successfully, report pass/fail counts. If it fails to start, report the build error.
+4. **Attempt a test run:** Run `npx playwright test --reporter=list` — if the dev server starts successfully, report pass/fail counts. If it fails to start, report the build error.
 5. **Coverage report:**
 
 ```
 QA Build Report
 ====================================
-Prototype
+App
 ------------------------------------
 Page                    Screen    Route    Mock Data
 ------------------------------------
@@ -351,7 +351,7 @@ Test Run: 186 passed | 0 failed | 0 skipped
 
 6. If any pages are missing, list them and explain what went wrong
 7. Inform the user:
-   - `npm run prototype` to launch the interactive prototype
+   - `npm run dev` to launch the app
    - `npx playwright test` to run the full test suite
    - `npx playwright test --ui` to use Playwright's interactive test runner
    - `npx playwright show-report` to view the HTML test report
@@ -398,9 +398,9 @@ This skill depends on:
 - **breeze-design skill** — Moxy Design System tokens, read by subagents for consistent styling in the app shell
 - **A product requirement brief** — the input document defining pages, flows, and acceptance criteria
 - **A technical architecture document** — tech stack and infrastructure decisions
-- **Existing Storybook stories** — components and mock data that the prototype reuses
+- **Existing Storybook stories** — components and mock data that the app reuses
 
 ## Reference Files
 
 - `references/test-patterns.md` — Playwright test conventions, page object patterns, assertion helpers
-- `references/prototype-patterns.md` — Screen wrapper conventions, mock data wiring, navigation patterns
+- `references/screen-patterns.md` — Screen wrapper conventions, mock data wiring, navigation patterns

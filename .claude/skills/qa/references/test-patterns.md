@@ -1,6 +1,6 @@
 # Playwright Test Patterns Reference
 
-Conventions for Playwright E2E tests against the Wingman prototype app. Tests use the Page Object Model, run against the Vite dev server, and cover rendering, navigation, interaction, offline, error, and accessibility categories.
+Conventions for Playwright E2E tests against the Breeze Airways app. Tests use the Page Object Model, run against the Vite dev server, and cover rendering, navigation, interaction, offline, error, and accessibility categories.
 
 ## File Structure
 
@@ -321,7 +321,7 @@ Examples:
 
 ## State Testing via URL Parameters
 
-The prototype supports URL-driven state for testing:
+The app supports URL-driven state for testing:
 
 ```
 /check-in/BRZ4K7              # Default state

@@ -1,11 +1,11 @@
-# Prototype Screen Patterns Reference
+# Screen Patterns Reference
 
-Conventions for building screen wrappers in the Wingman prototype app. Each screen imports an existing component from `libs/`, provides mock data, and wires navigation.
+Conventions for building screen wrappers in the Breeze Airways app. Each screen imports an existing component from `libs/`, provides mock data, and wires navigation.
 
 ## Screen File Structure
 
 ```
-apps/prototype/src/screens/{PageName}Screen.tsx
+app/src/screens/{PageName}Screen.tsx
 ```
 
 Each screen is a thin wrapper — it should NOT re-implement the component. It only provides:
@@ -126,10 +126,10 @@ const handleStepComplete = (step: string) => {
 
 2. **Use realistic aviation data** — real Breeze route cities (MCO, BDL, TPA, RDU, CHS, SAV, etc.), real flight number format (MX ###), real PNR format (6 uppercase alphanumeric).
 
-3. **Mock data module** — if multiple screens need the same data (e.g., passenger data shared between search and detail), create a shared mock in `apps/prototype/src/mock-api/data/`:
+3. **Mock data module** — if multiple screens need the same data (e.g., passenger data shared between search and detail), create a shared mock in `app/src/mock-api/data/`:
 
 ```tsx
-// apps/prototype/src/mock-api/data/passengers.ts
+// app/src/mock-api/data/passengers.ts
 export const mockPassengers = [
   {
     firstName: 'Sarah',
@@ -194,7 +194,7 @@ Screens do NOT need to render navigation chrome — the layout handles it. The s
 
 ## Path Aliases
 
-The prototype's `vite.config.ts` configures path aliases matching the monorepo:
+The app's `vite.config.ts` configures path aliases matching the monorepo:
 
 ```tsx
 // These import paths should work in screen files:
