@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "afplay /Users/jeffstapleton/Documents/Github/dotclaude/.claude/sounds/zelda-navi-listen.mp3&"
+            "command": "afplay .claude/sounds/job-s-finished.mp3&"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "afplay /Users/jeffstapleton/Documents/Github/dotclaude/.claude/sounds/job-s-finished.mp3&"
+            "command": "afplay .claude/sounds/job-s-finished.mp3&"
           }
         ]
       }
