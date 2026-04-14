@@ -1,6 +1,4 @@
 {
-  "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true,
   "hooks": {
     "Notification": [
       {
@@ -22,5 +20,11 @@
         ]
       }
     ]
+  },
+  "effortLevel": "high",
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
   }
 }
