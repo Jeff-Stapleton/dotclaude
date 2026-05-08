@@ -25,12 +25,11 @@ The report produces these columns (tab-separated):
 | Completed | Sprint points of tasks with status: complete, closed, done, or merged |
 | Forecast Accuracy | `Completed / Forecast * 100` (as percentage) |
 | Maintenance | Sprint points of tasks with Task Type = "Tech Debt" or "Security" |
-| Maintenance % | `Maintenance / Completed * 100` (as percentage) |
 | Unplanned | Sprint points of tasks with Unplanned custom field set to "Unplanned" |
-| Unplanned % | `Unplanned / Completed * 100` (as percentage) |
 | Bugs | Sprint points of tasks with Task Type = "Bug" |
-| Bugs % | `Bugs / Completed * 100` (as percentage) |
 | Avg MRs/Day | Total merged MRs during sprint period / working days (from GitLab) |
+
+The Maintenance %, Unplanned %, and Bugs % columns are intentionally NOT in the output — the destination Excel report computes them from the raw point columns. Do not output redundant percentage columns.
 
 ## Procedure
 
@@ -68,46 +67,60 @@ Use the team's sprint folder ID from the reference table below to call `get_list
 
 Parse the sprint list name to extract the sprint date range. The start date and end date are needed for the GitLab MR query.
 
-### Step 3: Retrieve All Tasks (Including Subtasks)
+### Step 3: Retrieve All Tasks in the Sprint
 
-Call `get_tasks` on the identified sprint list with `include_closed: true` and `subtasks: true` to get all tasks and subtasks regardless of status. If there are many tasks, paginate using the `page` parameter (100 tasks per page, starting at page 0).
+**CRITICAL:** Tasks live primarily in Epics/Backlog lists and are associated with sprint lists via ClickUp's **secondary locations** feature. The basic `mcp__clickup__get_tasks` tool returns ONLY tasks whose home/primary list is the sprint — it MISSES every task added via secondary location, which is the vast majority. Do NOT use `get_tasks` for sprint reporting.
 
-After collecting all items from `get_tasks`, compare the count against the list's `task_count` from the Step 2 `get_lists` response. If the returned count is significantly lower than `task_count`, subtasks may not have been fully returned. In that case:
+Use `mcp__claude_ai_ClickUp__clickup_search` with the `location.subcategories` filter — this returns every task associated with the sprint list, including those added via secondary locations and including subtasks:
 
-1. For each parent task returned, call `get_task` on it to retrieve its full details including its `subtasks` array.
-2. For each subtask ID found that is **not** already in the collected set, call `get_task` on that subtask ID to fetch its full details.
-3. Batch these `get_task` calls in parallel where possible to minimize latency.
+```
+mcp__claude_ai_ClickUp__clickup_search({
+  filters: {
+    asset_types: ["task"],
+    location: { subcategories: ["<sprint_list_id>"] }
+  },
+  count: 100
+})
+```
 
-**Both parent tasks and subtasks count toward all metrics.** Every item (task or subtask) is treated identically for points, status, Task Type, and Unplanned classification. There is no special handling or exclusion for subtasks vs parent tasks.
+Notes:
+- **Do NOT use `task_statuses`** — that filter is broken on `clickup_search`. Filter status client-side later.
+- If `next_cursor` is non-null, paginate with `cursor`.
+- Each result includes `id`, `custom_id`, `name`, `status`, `archived`, but NOT points or custom fields.
 
-Collect ALL tasks and subtasks before proceeding to calculations.
+### Step 4: Fetch Full Task Details (Points and Custom Fields)
 
-### Step 4: Enrich Task Details
+`clickup_search` does not include points or custom fields. For each task ID returned, fetch full details via the ClickUp REST API in parallel:
 
-For each task/subtask collected, check if it has sufficient data (points, custom fields, tags). The `get_tasks` response includes:
-- `points` - sprint point value (may be null; treat null as 0)
-- `tags` - array of tag objects with `name` property
-- `custom_fields` - array of custom field objects
-- `status` - object with `status` property (lowercase string)
-- `parent` - if present/non-null, this item is a subtask
+```bash
+for id in <id1> <id2> ...; do
+  curl -s "https://api.clickup.com/api/v2/task/${id}?custom_fields=true" \
+    -H "Authorization: ${CLICKUP_API_TOKEN}" \
+    -o "/tmp/sprint_tasks/${id}.json" &
+done
+wait
+```
 
-If any task is missing custom field data needed for classification, use `get_task` on that individual task to get full details. Batch these calls in parallel where possible.
+(Inline IDs in the `for` statement — variable expansion is unreliable in the shell context.)
 
-### Step 4b: Filter Out "On Deck" Tasks
+For each loaded task, extract:
+- `points` — sprint points (may be null; treat null as 0)
+- `status.status` — string status (lowercase)
+- `parent` — null for parent task, populated for subtask
+- `archived` — boolean
+- `custom_fields[]` — find Task Type, Unplanned, Team by ID (see Step 5)
 
-Before calculating metrics, filter out any tasks/subtasks where the **Team** custom field is set to **"On Deck"**.
+**Both parent tasks and subtasks count toward all metrics.** Treat them identically.
 
-**Team custom field:**
-- **Field ID**: `ebbcffe8-2615-42b9-802f-885d47206a07`
-- **Type**: `drop_down`
-- **Options**:
-  - Index `0` = Product
-  - Index `1` = Platform
-  - Index `2` = On Deck
+### Step 4b: Do NOT Exclude "On Deck" Tasks
 
-**Remove** any task/subtask where this field's value is `2` (On Deck). These tasks are excluded from **all** metrics and counts. In the Step 8 supporting details, note how many tasks were excluded as "On Deck".
+**All tasks in the sprint count toward metrics, regardless of the Team custom field value.** Tasks with Team = "On Deck" are still real work that landed in the sprint, and they count toward Forecast, Completed, Bugs, Maintenance, and Unplanned just like any other task.
 
-Tasks where the Team field is not set, or set to Product (`0`) or Platform (`1`), are kept.
+For reference, the Team custom field options are:
+- Field ID: `ebbcffe8-2615-42b9-802f-885d47206a07`
+- Options: Claude (0), Product (1), Platform (2), On Deck (3)
+
+You may surface the Team breakdown in the Step 8 supporting details (e.g., "On Deck: N tasks, X pts") for informational purposes, but do not exclude any from the calculations.
 
 ### Step 5: Calculate Metrics
 
@@ -152,10 +165,9 @@ bug_points        = sum of points for tasks with Task Type "Bug"
 
 forecast          = total_points - unplanned_points
 forecast_accuracy = (completed_points / forecast) * 100    [if forecast > 0, else "N/A"]
-maintenance_pct   = (maintenance_points / completed_points) * 100  [if completed > 0, else 0]
-unplanned_pct     = (unplanned_points / completed_points) * 100   [if completed > 0, else 0]
-bugs_pct          = (bug_points / completed_points) * 100         [if completed > 0, else 0]
 ```
+
+Do NOT compute Maintenance %, Unplanned %, or Bugs % — those are calculated downstream in the Excel report from the raw point columns.
 
 ### Step 6: Calculate Avg MRs/Day from GitLab
 
@@ -188,16 +200,17 @@ Output the data in **two formats**:
 **Format 1: Tab-separated for Excel (wrapped in a code block for easy copying)**
 
 ```
-Sprint Name	Forecast	Completed	Forecast Accuracy	Maintenance	Maintenance%	Unplanned	Unplanned %	Bugs	Bugs %	Avg MRs/Day
-[sprint name]	[forecast]	[completed]	[accuracy%]	[maintenance]	[maint%]	[unplanned]	[unplanned%]	[bugs]	[bugs%]	[mrs/day]
+Sprint Name	Forecast	Completed	Forecast Accuracy	Maintenance	Unplanned	Bugs	Avg MRs/Day
+[sprint name]	[forecast]	[completed]	[accuracy]	[maintenance]	[unplanned]	[bugs]	[mrs/day]
 ```
 
 Rules for the tab-separated output:
 - Use TAB characters between columns (not spaces)
-- Percentages should be formatted as numbers with one decimal (e.g., `84.4` not `84.4%`) so Excel treats them as numbers
-- Points should be integers
+- Forecast Accuracy is formatted as a number with one decimal (e.g., `74.3` not `74.3%`) so Excel treats it as a number
+- All other point columns are integers
 - MRs/Day should have one decimal place
 - Include the header row
+- Do NOT include Maintenance %, Unplanned %, or Bugs % — those are computed in the Excel report
 
 **Format 2: Readable summary table (for quick visual reference)**
 
@@ -207,10 +220,9 @@ Display the same data as a markdown table for readability.
 
 After the main output, show a brief breakdown:
 - Total items in sprint: N (N parent tasks + N subtasks)
-- Excluded as "On Deck": N (list names if fewer than 10)
-- Items included in metrics: N
 - Items with points: N
 - Items without points: N (list names if fewer than 10)
+- Team breakdown (informational, not used for exclusion): Claude/Product/Platform/On Deck/unset counts and points
 - Unplanned items: N (list names)
 - Maintenance items: N (list names)
 - Bug items: N (list names)
@@ -220,16 +232,16 @@ This helps the user verify the numbers and catch any misclassified tasks.
 ## Execution Guidelines
 
 - Always begin with the interactive team selection in Step 1. Do not skip this.
-- Use parallel tool calls wherever possible (e.g., fetching task details for multiple tasks).
-- If a sprint list has 0 tasks, inform the user and ask if they want to try a different sprint.
-- **Subtasks are included in all metrics.** Both parent tasks and subtasks contribute to points, completion, Task Type, and Unplanned counts. Always pass `subtasks: true` when calling `get_tasks`, and verify the returned count against the list's `task_count`. If there is a discrepancy, fetch subtasks individually via `get_task` on each parent task (see Step 3 for details).
+- Use parallel tool calls wherever possible (e.g., fetching task details for multiple tasks via parallel `curl &; wait`).
+- If a sprint search returns 0 tasks, inform the user and ask if they want to try a different sprint.
+- **Use `clickup_search` with `location.subcategories`, NOT `get_tasks`.** Tasks are added to sprints as secondary locations; `get_tasks` only returns home-list tasks and will miss most of the sprint.
+- **Subtasks are included in all metrics.** `clickup_search` returns parent tasks and subtasks together; treat them identically for points, status, Task Type, and Unplanned classification.
 - Tasks/subtasks with null/missing points should be counted as 0 points but flagged in the supporting details.
 - The Task Type custom field may not be set on all tasks. Tasks without a Task Type set are excluded from Maintenance and Bug counts (but still included in Forecast and Completed).
 - For the "Unplanned" check, use the custom dropdown field (id: `41395f7f-62fd-4683-a396-757f91653239`), value `1` = Unplanned.
-- When calculating Forecast Accuracy, if Forecast is 0, output "N/A".
-- When calculating percentages, if the denominator (Completed) is 0, output 0.
-- Round percentages to one decimal place.
+- When calculating Forecast Accuracy, if Forecast is 0, output "N/A". Round to one decimal place.
 - Round MRs/Day to one decimal place.
+- Do NOT compute or output Maintenance %, Unplanned %, or Bugs % — those are auto-computed downstream in Excel.
 
 ## Additional Resources
 

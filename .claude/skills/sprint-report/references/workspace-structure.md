@@ -79,3 +79,9 @@ Use **prefix matching** (startsWith) since teams append qualifiers like `done (p
 - **Field ID:** `41395f7f-62fd-4683-a396-757f91653239`
 - Options: Planned (0), **Unplanned (1)**, TODO is all blocked (2), On-Call Backlog (3)
 - A task is "unplanned" when the dropdown value is `1`
+
+### Team (dropdown)
+- **Field ID:** `ebbcffe8-2615-42b9-802f-885d47206a07`
+- Options: Claude (0), Product (1), Platform (2), On Deck (3)
+- All Team values count toward sprint metrics — "On Deck" tasks are NOT excluded. The Team field is informational only for sprint reporting.
+- **Defensive note:** This option list has changed before — Claude was added at index 0, shifting On Deck from 2 to 3. Always verify by reading the task's `type_config.options` array and matching by option `name`, not by hardcoded index.
