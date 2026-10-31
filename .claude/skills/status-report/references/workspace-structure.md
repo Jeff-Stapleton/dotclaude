@@ -17,12 +17,30 @@ Each product team has a space in ClickUp with sprint folders containing lists pe
 - **Epics Folder ID:** `90140242642` (SRE Epics list: `901400480348`)
 - Sprint naming: `Sprint N (MM/DD - MM/DD)`
 
-### Operations
-- **Space ID:** `12799086`
-- **2026 Sprint Folder ID:** `90147563534`
+### Field Ops
+- **Space ID:** `12799086` (formerly "Operations" — renamed when the team split 2026-09-02)
+- **2026 Sprint Folder ID:** `90147563534` (name: "Sprints 2026")
 - **2025 Sprint Folder ID:** `90144049601`
-- **Epics Folder ID:** `120290296` (Operation's Backlog: `80047745`, Ops Platform Epics, Technical Debt, Postmortems)
+- **Epics Folder ID:** `120290296`
+  - Field Ops Backlog list: `80047745` (859 tasks as of 2026-09)
+  - Field Ops Epics list: `900601272813`
+  - Also in this folder: Technical Debt (`900601878184`), Postmortems (`901410000293`), Parking Lot (`901412744069`), 2026 Hackathon (`901414049448`)
+- **Archives Folder ID:** `90144448816`
+- **Risks Folder ID:** `90143602256` (Risks list: `901406077596`)
 - Sprint naming: `Sprint N (MM/DD - MM/DD)`
+- **Sprint list membership is unreliable** — see `status-report` SKILL.md Step 2a. Real sprint work is mostly subtasks multi-homed in from Backlog/Epics; `get_tasks` on the sprint list itself returns only a small fraction of the list's true `task_count`. Use the Backlog/Epics workaround, not the sprint list.
+
+### Central Ops
+- **Space ID:** `90147134052` (new space, split off from "Operations" 2026-09-02)
+- **Sprint Folder ID:** `901411992361` (name: "2026 Sprints" — note reversed word order vs. Field Ops's "Sprints 2026")
+- **Epics Folder ID:** `901411633495`
+  - Central Ops Backlog list: `901419180254`
+  - Central Ops Epics list: `901419180255`
+  - Also in this folder: Technical Debt (`901419180256`), Postmortems (`901419180257`), Parking Lot (`901419180258`)
+- **Archives Folder ID:** `901411633490`
+- **Risks Folder ID:** `901411633496` (Risks list: `901419180261`)
+- Sprint naming: `Sprint N (MM/DD - MM/DD)`
+- **Sprint list membership is unreliable** — same issue as Field Ops. Central Ops Sprint 18 list metadata reports `task_count: 12` but `get_tasks` on that list returns only 2. Use the Backlog/Epics workaround (SKILL.md Step 2a), not the sprint list.
 
 ### Operations Systems
 - **Space ID:** `90142455179`
@@ -99,4 +117,5 @@ Common statuses across spaces (may vary by team):
 - Testing/QA uses cumulative sprint numbering (e.g., Sprint 62 instead of Sprint 3).
 - Loyalty Experience uses creative sprint theme names; match by date range, not sprint number.
 - Trip Services calls sprints "Draws" and sprint lists "Services N".
+- Field Ops and Central Ops sprint lists cannot be trusted for task enumeration — use the Backlog/Epics workaround (SKILL.md Step 2a) for both.
 - Staff space tracks quarterly initiatives, not sprints. Include if relevant to leadership visibility.

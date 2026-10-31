@@ -1,14 +1,16 @@
 ---
 name: sprint-planning
-description: Create a new sprint and plan its work. Use when the user asks to "plan a sprint", "create a new sprint", "sprint planning", "sprint-planning", "roll over sprint", or "set up next sprint".
-version: 1.0.0
+description: Plan a new sprint — roll over incomplete work, configure the view, set custom fields, and fill capacity from Epics. Use when the user asks to "plan a sprint", "sprint planning", "sprint-planning", "roll over sprint", or "set up next sprint".
+version: 2.0.0
 ---
 
 # Sprint Planning
 
 ## Overview
 
-Create a new sprint list in the Breeze Airways ClickUp workspace, roll over incomplete work from the previous sprint, configure the sprint view, and fill remaining capacity from the prioritized Epics backlog to hit a target point range.
+Plan a sprint in the Breeze Airways ClickUp workspace. This skill rolls over incomplete work from the previous sprint into the target sprint, configures the sprint view, sets custom fields, and optionally fills remaining capacity from the prioritized Epics backlog.
+
+**Sprints cannot be created via the ClickUp API.** They are a special UI entity created either manually or via Sprint Automations. This skill assumes the target sprint already exists.
 
 ## Workspace Context
 
@@ -19,79 +21,76 @@ The Breeze Airways ClickUp workspace (Team ID: `2277049`) contains multiple prod
 ## Prerequisites
 
 - The `CLICKUP_API_TOKEN` environment variable must be set (personal API token, format: `pk_...`).
-- The ClickUp MCP server tools are available for creating lists, searching, and reading tasks.
-- Direct ClickUp API calls via `curl` are needed for:
-  - Adding tasks to sprint lists as secondary locations (`POST /api/v2/list/{list_id}/task/{task_id}`)
-  - Creating/configuring views (`POST /api/v2/list/{list_id}/view`)
+- Two ClickUp MCP servers are available:
+  - **`clickup`** (basic) — `get_lists`, `get_tasks`, `search_tasks`, `create_task`, etc.
+  - **`claude_ai_ClickUp`** — `clickup_search`, `clickup_filter_tasks`, `clickup_get_task`, etc.
+- Direct ClickUp REST API calls via `curl` are needed for operations not covered by MCP tools.
+
+## Critical API Gotchas
+
+These are hard-won lessons. Do NOT skip this section.
+
+1. **Finding tasks in sprints:** The basic MCP tools (`get_tasks`, `search_tasks`) return EMPTY for sprint lists because tasks are added via secondary locations. You MUST use `clickup_search` (from `claude_ai_ClickUp`) with `location.subcategories` filter to find sprint tasks.
+
+2. **Status filtering is unreliable:** The `task_statuses` filter on `clickup_search` does NOT work correctly — it returns tasks of all statuses regardless of the filter. Always filter statuses **client-side** after fetching results.
+
+3. **Sprint creation is impossible via API:** ClickUp Sprints are a special entity type with their own icon and behavior. The API only creates regular lists (`clickup_create_list_in_folder`), which have the wrong type. Sprints must be created manually in the UI or via Sprint Automations.
+
+4. **Updating default views requires `name` and `type`:** When using `PUT /api/v2/view/{view_id}` on a required/default view, you MUST include `"name": "List"` and `"type": "list"` in the payload. Without them, the API returns `VIEWS_055` or `VIEWS_015` errors.
+
+5. **Default views are lazily initialized:** The default "List" view (ID: `6-{list_id}-1`) only exists after someone opens the sprint in the ClickUp UI. If the view doesn't exist yet, the GET/PUT will fail. Ask the user to open the sprint in the UI first, then retry.
+
+6. **Don't create named views — update the default one:** Creating a new view via `POST /api/v2/list/{list_id}/view` adds a separate tab. Instead, update the existing default "List" view via `PUT /api/v2/view/6-{list_id}-1`.
+
+7. **Bash for loops:** Always inline task IDs directly in the `for` statement. Do NOT assign them to a variable first — variable expansion is unreliable in the tool's shell context.
+   ```bash
+   # CORRECT:
+   for task_id in abc123 def456 ghi789; do ...; done
+
+   # WRONG (IDs won't expand):
+   TASK_IDS="abc123 def456 ghi789"
+   for task_id in $TASK_IDS; do ...; done
+   ```
 
 ## Procedure
 
-### Step 1: Select Team
+### Step 1: Identify Team and Target Sprint
 
-Prompt the user to select which team to plan the sprint for. Use the `AskUserQuestion` tool with these options:
-
+Ask the user which team to plan for using `AskUserQuestion`:
 - **Operations**
 - **SRE**
 - **Operations Systems**
 - **Trip Services**
 
-Only one team per sprint planning session. Wait for the user's selection before proceeding.
-
-### Step 2: Determine Sprint Number and Dates
-
-Calculate the next sprint based on today's date and the biweekly cadence starting January 1, 2026:
-
-1. Determine today's date.
-2. Calculate which sprint is currently active (or just ending).
-3. The new sprint starts the day after the current sprint ends.
-4. Sprint duration is always 14 days (start date to end date, inclusive of start, exclusive of end for naming).
-
-Look at the team's existing sprint folder to find the latest sprint list and confirm the next sprint number and dates. Use `clickup_get_workspace_hierarchy` filtered to the team's space, or use `clickup_search` to find recent sprints.
-
-**Sprint naming convention:** `Sprint N (M/D - M/D)` — for example, `Sprint 6 (3/12 - 3/25)`.
-
-Present the calculated sprint name to the user for confirmation before creating it.
-
-### Step 3: Create the Sprint List
-
-Use `clickup_create_list_in_folder` to create the new sprint list:
-- **folder_id:** The team's 2026 Sprint Folder ID (from references)
-- **name:** The sprint name from Step 2
-
-Record the new list ID for subsequent steps.
-
-### Step 4: Roll Over Incomplete Tasks from Previous Sprint
-
-Find all tasks in the previous sprint that are not done:
-
-1. Use `clickup_search` with the **previous sprint list ID as a subcategory location filter** and filter by `task_statuses: ["unstarted", "active"]`. Set `count: 100` to get all results.
-
-2. From the results, identify tasks with incomplete statuses (todo, in progress). Ask the user if they also want to roll over tasks in `code review`, `product review`, or `specing` status.
-
-3. For each task to roll over, add it to the new sprint list as a secondary location using the ClickUp REST API via Bash:
-   ```bash
-   curl -s -X POST "https://api.clickup.com/api/v2/list/{new_list_id}/task/{task_id}" \
-     -H "Authorization: ${CLICKUP_API_TOKEN}" \
-     -H "Content-Type: application/json"
-   ```
-   A successful response returns `{}`.
-
-4. Run all curl commands in parallel for efficiency.
-
-5. Calculate the total rollover points by fetching point values for each task (use `get_task` on individual tasks or batch via the REST API).
-
-**Present a summary table** of rolled-over tasks showing: ID, name, status, assignee, and points.
-
-### Step 5: Configure the Sprint View
-
-Create a named list view on the new sprint with the standard configuration:
+Then identify the target sprint. The user may provide a direct URL, or you can find the latest sprint by listing the team's sprint folder:
 
 ```bash
-curl -s -X POST "https://api.clickup.com/api/v2/list/{new_list_id}/view" \
+# Use the basic MCP tool:
+clickup.get_lists(folder_id: "<team_sprint_folder_id>")
+```
+
+The target sprint is the latest list in the folder (highest orderindex). Confirm with the user which sprint to plan.
+
+Also identify the **previous sprint** (the one before the target) — this is the source for rollover tasks.
+
+### Step 2: Configure the Sprint View
+
+Update the target sprint's default "List" view to match the standard configuration.
+
+**Step 2a:** Check if the view is initialized:
+```bash
+curl -s "https://api.clickup.com/api/v2/list/{sprint_list_id}/view" \
+  -H "Authorization: ${CLICKUP_API_TOKEN}"
+```
+If `required_views.list` is `null`, ask the user to open the sprint in the ClickUp UI, then retry.
+
+**Step 2b:** Once the view exists, update it. The view ID follows the pattern `6-{list_id}-1`:
+```bash
+curl -s -X PUT "https://api.clickup.com/api/v2/view/6-{sprint_list_id}-1" \
   -H "Authorization: ${CLICKUP_API_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Sprint N Board",
+    "name": "List",
     "type": "list",
     "grouping": {
       "field": "cf_ebbcffe8-2615-42b9-802f-885d47206a07",
@@ -100,109 +99,199 @@ curl -s -X POST "https://api.clickup.com/api/v2/list/{new_list_id}/view" \
       "ignore": false,
       "single": false
     },
+    "sorting": { "fields": [] },
+    "filters": {
+      "op": "AND",
+      "fields": [],
+      "search": "",
+      "search_custom_fields": true,
+      "search_description": true,
+      "search_name": true,
+      "show_closed": false
+    },
     "columns": {
       "fields": [
-        {"field": "assignee", "idx": 0, "width": 109, "hidden": false},
-        {"field": "pointsEstimate", "idx": 1, "width": 115, "hidden": false, "calculation": {"func": "sum", "unit": "", "groups": []}},
-        {"field": "status", "idx": 2, "width": 147, "hidden": false},
-        {"field": "cf_721ae2d2-9979-4956-9cfa-d92f2ac06238", "idx": 3, "width": 160, "hidden": false},
-        {"field": "cf_41395f7f-62fd-4683-a396-757f91653239", "idx": 4, "width": 160, "hidden": false},
-        {"field": "cf_ebbcffe8-2615-42b9-802f-885d47206a07", "idx": 5, "width": 160, "hidden": true}
+        {"field": "assignee", "idx": 0, "width": 118, "hidden": false},
+        {"field": "dueDate", "idx": 1, "width": 122, "hidden": false},
+        {"field": "priority", "idx": 2, "width": 108, "hidden": true},
+        {"field": "pointsEstimate", "idx": 3, "width": 124, "hidden": false, "calculation": {"func": "sum", "unit": "", "groups": []}},
+        {"field": "name", "idx": 4, "width": 486, "hidden": true},
+        {"field": "status", "idx": 5, "width": 133, "hidden": false},
+        {"field": "id", "idx": 6, "width": 160, "hidden": true},
+        {"field": "customId", "idx": 7, "width": 160, "hidden": true},
+        {"field": "dateCreated", "idx": 8, "width": 160, "hidden": true},
+        {"field": "dateDone", "idx": 9, "width": 160, "hidden": true},
+        {"field": "dateUpdated", "idx": 10, "width": 160, "hidden": true},
+        {"field": "startDate", "idx": 11, "width": 160, "hidden": true},
+        {"field": "duration", "idx": 12, "width": 160, "hidden": true},
+        {"field": "timeLogged", "idx": 13, "width": 160, "hidden": true},
+        {"field": "timeEstimate", "idx": 14, "width": 160, "hidden": true},
+        {"field": "sprints", "idx": 15, "width": 185, "hidden": true},
+        {"field": "dateClosed", "idx": 16, "width": 160, "hidden": true},
+        {"field": "createdBy", "idx": 17, "width": 160, "hidden": true},
+        {"field": "latestComment", "idx": 18, "width": 160, "hidden": true},
+        {"field": "commentCount", "idx": 19, "width": 160, "hidden": true},
+        {"field": "lists", "idx": 20, "width": 185, "hidden": true},
+        {"field": "pullRequests", "idx": 21, "width": 160, "hidden": true},
+        {"field": "incompleteCommentCount", "idx": 22, "width": 160, "hidden": true},
+        {"field": "customItems", "idx": 23, "width": 160, "hidden": true},
+        {"field": "timeInStatus", "idx": 24, "width": 160, "hidden": true},
+        {"field": "linked", "idx": 25, "width": 160, "hidden": true},
+        {"field": "dependencies", "idx": 26, "width": 160, "hidden": true},
+        {"field": "pages", "idx": 27, "width": 160, "hidden": true},
+        {"field": "cf_2ec88f58-3567-4999-8d56-5ae5974cdc1f", "idx": 28, "width": 160, "hidden": true},
+        {"field": "cf_721ae2d2-9979-4956-9cfa-d92f2ac06238", "idx": 29, "width": 160, "hidden": false},
+        {"field": "cf_41395f7f-62fd-4683-a396-757f91653239", "idx": 30, "width": 160, "hidden": false},
+        {"field": "cf_ebbcffe8-2615-42b9-802f-885d47206a07", "idx": 31, "width": 160, "hidden": true},
+        {"field": "cf_d0ed3e14-5577-400d-9297-05ef44228cff", "idx": 32, "width": 160, "hidden": true},
+        {"field": "tag", "idx": 33, "width": 160, "hidden": true}
       ]
+    },
+    "settings": {
+      "show_task_locations": false,
+      "show_subtasks": 1,
+      "show_subtask_parent_names": false,
+      "show_closed_subtasks": false,
+      "show_assignees": false,
+      "show_images": false,
+      "show_timer": false,
+      "collapse_empty_columns": false,
+      "me_comments": true,
+      "me_subtasks": true,
+      "me_checklists": true,
+      "show_empty_statuses": false,
+      "auto_wrap": false,
+      "time_in_status_view": 1,
+      "is_description_pinned": false,
+      "show_task_properties": true,
+      "show_sprint_cards": {
+        "show_add_tasks": true,
+        "show_add_assignees": true,
+        "show_add_estimates": true
+      }
     }
   }'
 ```
 
-Replace `Sprint N Board` with the actual sprint name (e.g., `Sprint 6 Board`).
+**CRITICAL:** The `"name": "List"` and `"type": "list"` fields are REQUIRED for updating default views. Without them the API returns errors.
 
-### Step 6: Fill from Epics Backlog
+### Step 3: Roll Over Incomplete Tasks
 
-This is the core capacity planning step. The goal is to add sprint-ready subtasks from the highest-priority Epics until the sprint reaches the target point range.
+Find all tasks in the **previous sprint** that are NOT "done (prod)" or "Closed", and add them to the target sprint.
 
-#### 6a: Determine Target Points
-
-Ask the user for their target point range. Default is **65-70 points** for Operations. Calculate remaining capacity:
-
+**Step 3a:** Fetch all tasks from the previous sprint:
 ```
-remaining_capacity = target_max - rollover_points
+clickup_search(
+  filters: {
+    asset_types: ["task"],
+    location: { subcategories: ["<previous_sprint_list_id>"] }
+  },
+  count: 100
+)
 ```
 
-#### 6b: Get the Prioritized Epics
+**Important:** Do NOT use the `task_statuses` filter — it doesn't work. Fetch all tasks and filter client-side.
 
-Fetch all open tasks from the team's Epics list using the ClickUp REST API with subtasks:
+**Step 3b:** Filter results client-side. Keep every task where status is NOT:
+- `done (prod)`
+- `Closed`
 
+All other statuses roll over: `todo`, `in progress`, `code review`, `product review`, `specing`, `unrefined`, `awaiting release`.
+
+**Step 3c:** Present a summary table of tasks to roll over:
+
+| # | Custom ID | Name | Status | Assignee |
+|---|-----------|------|--------|----------|
+
+**Step 3d:** Add each task to the target sprint as a secondary location:
 ```bash
-curl -s -X GET "https://api.clickup.com/api/v2/list/{epics_list_id}/task?subtasks=true&include_closed=false&page=0" \
-  -H "Authorization: ${CLICKUP_API_TOKEN}" \
-  -H "Content-Type: application/json"
+# Inline all task IDs directly — do NOT use a variable
+for task_id in <id1> <id2> <id3> ...; do
+  result=$(curl -s -X POST "https://api.clickup.com/api/v2/list/<target_sprint_list_id>/task/${task_id}" \
+    -H "Authorization: ${CLICKUP_API_TOKEN}" \
+    -H "Content-Type: application/json")
+  echo "${task_id}: ${result}"
+done
 ```
 
-Paginate if `last_page` is false (increment `page` parameter).
+A successful response returns `{}`.
 
-**Epics are stack-ranked by `orderindex`** — lower orderindex = higher priority. Sort parent tasks (where `parent === null`) by `orderindex` ascending.
+### Step 4: Set Custom Fields on All Sprint Tasks
 
-#### 6c: Identify Sprint-Ready Subtasks
+After rollover, set custom fields on ALL tasks in the target sprint (rolled-over + any that were already there).
 
-For each epic (in priority order), examine its subtasks. A subtask is **sprint-ready** if:
-1. It has a status of `todo`, `in progress`, or `code review` (actively workable)
-2. It has **points assigned** (not null, not 0)
-3. It is **not already in the new sprint** (check against already-added task IDs)
-
-Skip subtasks that are `specing`, `unrefined`, or have no points — these aren't ready for sprint commitment.
-
-#### 6d: Build the Sprint Backlog
-
-Walk through epics top-to-bottom. For each epic's sprint-ready subtasks:
-1. Add the subtask's points to a running total
-2. If the running total would exceed the target max, consider whether to include it (slightly over is OK)
-3. Stop when the target range is reached
-
-Present the proposed additions as a table showing: task ID, name, parent epic, points, and running total. Ask the user for confirmation before adding.
-
-#### 6e: Add Tasks to Sprint
-
-After user confirmation, add each task to the new sprint list using the same REST API call from Step 4:
-
+**Step 4a:** Set "Unplanned" to "Planned" on every task:
 ```bash
-curl -s -X POST "https://api.clickup.com/api/v2/list/{new_list_id}/task/{task_id}" \
-  -H "Authorization: ${CLICKUP_API_TOKEN}" \
-  -H "Content-Type: application/json"
+for task_id in <all_sprint_task_ids>; do
+  result=$(curl -s -X POST "https://api.clickup.com/api/v2/task/${task_id}/field/41395f7f-62fd-4683-a396-757f91653239" \
+    -H "Authorization: ${CLICKUP_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": 0}')
+  echo "${task_id}: ${result}"
+done
 ```
 
-Run all curl commands in parallel for efficiency.
+**Step 4b:** Check "Team" field on each task, and set to "On Deck" where undefined:
+```bash
+# First, check which tasks have Team undefined
+for task_id in <all_sprint_task_ids>; do
+  result=$(curl -s "https://api.clickup.com/api/v2/task/${task_id}?custom_fields=true" \
+    -H "Authorization: ${CLICKUP_API_TOKEN}")
+  team=$(echo "$result" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for cf in d.get('custom_fields',[]):
+    if cf['id']=='ebbcffe8-2615-42b9-802f-885d47206a07':
+        v=cf.get('value')
+        print('SET' if v is not None else 'UNDEFINED')
+        break
+" 2>/dev/null)
+  echo "${task_id}: Team=${team}"
+done
+```
 
-### Step 7: Final Summary
+Then set "Team" = "On Deck" (value `2`) on tasks where it was UNDEFINED:
+```bash
+for task_id in <undefined_team_task_ids>; do
+  result=$(curl -s -X POST "https://api.clickup.com/api/v2/task/${task_id}/field/ebbcffe8-2615-42b9-802f-885d47206a07" \
+    -H "Authorization: ${CLICKUP_API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": 2}')
+  echo "${task_id}: ${result}"
+done
+```
+
+### Step 5: Final Summary
 
 Present a complete sprint summary:
 
 **Sprint Overview:**
 - Sprint name and link
-- Total points (rollover + new)
-- Point breakdown: rollover vs new work
+- Total tasks rolled over
+- Tasks already in sprint before rollover
 
-**Rollover Tasks:** (table with ID, name, status, assignee, points)
+**All Sprint Tasks:** (table with Custom ID, name, status, assignee, Team, Unplanned)
 
-**New Tasks from Epics:** (table with ID, name, epic, assignee, points)
+## Custom Field Reference
 
-**Point Distribution:**
-- By team (Product / Platform / On Deck) if data available
-- By assignee
+| Field | Field ID | Values |
+|-------|----------|--------|
+| Team | `ebbcffe8-2615-42b9-802f-885d47206a07` | 0=Product, 1=Platform, 2=On Deck |
+| Task Type | `721ae2d2-9979-4956-9cfa-d92f2ac06238` | 0=New Feature, 1=Bug, 2=Tech Debt, 3=Enhancement, ... |
+| Unplanned | `41395f7f-62fd-4683-a396-757f91653239` | 0=Planned, 1=Unplanned, 2=TODO is all blocked, 3=On-Call Backlog |
 
-## Execution Guidelines
+## API Endpoint Reference
 
-- Always begin with the interactive team selection in Step 1. Do not skip this.
-- Always confirm the sprint name/dates with the user before creating the list.
-- Use parallel tool calls and parallel curl commands wherever possible.
-- When adding tasks to a sprint, use the REST API `POST /api/v2/list/{list_id}/task/{task_id}` — this adds a secondary location. Do NOT create duplicate tasks with `clickup_create_task`.
-- The `CLICKUP_API_TOKEN` env var may not be available directly via `echo` — use `printenv | grep CLICKUP` to retrieve it if needed.
-- On Windows, use `$TEMP` (not `/tmp`) for temporary files, and note that Node.js needs `process.env.TEMP` for file paths.
-- When using Node.js for JSON parsing on Windows, write scripts to temp files first (avoid inline `-e` with special characters that bash escapes).
-- A successful task-to-list addition returns `{}` from the API.
-- If the API returns `{"err":"Team(s) not authorized"}`, the task ID is likely wrong — verify IDs from the actual API response data.
-- Subtasks may span multiple pages in the Epics list — always check `last_page` and paginate.
-- Present clear summary tables at each step so the user can verify before proceeding.
+| Operation | Method | Endpoint |
+|-----------|--------|----------|
+| Add task to sprint | POST | `/api/v2/list/{list_id}/task/{task_id}` |
+| Set custom field | POST | `/api/v2/task/{task_id}/field/{field_id}` |
+| Get list views | GET | `/api/v2/list/{list_id}/view` |
+| Update default view | PUT | `/api/v2/view/6-{list_id}-1` |
+| Get task with fields | GET | `/api/v2/task/{task_id}?custom_fields=true` |
+| Get lists in folder | GET | `/api/v2/folder/{folder_id}/list` |
 
 ## Additional Resources
 
 ### Reference Files
-- **`references/workspace-structure.md`** — Space IDs, folder IDs, epics list IDs, custom field IDs, sprint cadence, view configuration, and task status definitions
+- **`references/workspace-structure.md`** — Space IDs, folder IDs, epics list IDs, custom field IDs, sprint cadence, and task status definitions

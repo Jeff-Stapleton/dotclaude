@@ -21,10 +21,31 @@
       }
     ]
   },
-  "effortLevel": "high",
-  "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "allow": [
+      "Edit(~/Documents/Gitlab/**/*.tsx)",
+      "Edit(~/Documents/Github/**/*.tsx)",
+      "Bash(npm run *)",
+      "Bash(npm init *)",
+      "Bash(npm i *)",
+      "Bash(npx nx *)",
+      "Bash(npx playwright *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(tail *)",
+      "Bash(head *)",
+      "Bash(echo *)",
+      "Bash(curl -s -m 2 http://localhost:7878/*)",
+      "Bash(git *)"
+    ]
+  },
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
-  }
+  },
+  "effortLevel": "high",
+  "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "model": "claude-fable-5[1m]"
 }

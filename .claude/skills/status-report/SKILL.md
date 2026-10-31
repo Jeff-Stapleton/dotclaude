@@ -1,7 +1,7 @@
 ---
 name: status-report
 description: This skill should be used when the user asks to "generate a status report", "create a sprint summary", "what happened last sprint", "sprint status", "status report", "sprint report", or discusses summarizing recent sprint work across teams
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Project Status Report Generator
@@ -30,7 +30,8 @@ The Breeze Airways ClickUp workspace (Team ID: `2277049`) contains multiple prod
 Prompt the user with `AskUserQuestion` to select which team(s) to include:
 
 - **SRE**
-- **Operations**
+- **Field Ops**
+- **Central Ops**
 - **Operations Systems**
 - **Trip Services**
 - **Sell**
@@ -42,21 +43,34 @@ Wait for the selection before proceeding.
 
 ### Step 2: Gather Source Data
 
-Sprints are biweekly starting January 1, 2026. To capture current project state, pull tasks from the current sprint list and the one immediately prior — this gives enough recency to reflect where things actually stand. **These sprints are a data-gathering window only; they must not appear in the output.**
+Sprints are biweekly starting January 1, 2026, but this report runs weekly — pull tasks from the **current sprint list only**. Do not include the prior sprint. **The sprint is a data-gathering window only; it must not appear in the output.**
 
 **Team sprint folder reference (2026 folder IDs):**
 
 | Team | Sprint Folder ID | Notes |
 |------|-----------------|-------|
 | SRE | `90147510422` | Standard sprint naming |
-| Operations | `90147563534` | Standard sprint naming |
+| Field Ops | `90147563534` | Standard sprint naming. **Use the Step 2a workaround below instead of the sprint list** — see caveat |
+| Central Ops | `901411992361` | Standard sprint naming (folder named "2026 Sprints"). **Use the Step 2a workaround below instead of the sprint list** — see caveat |
 | Operations Systems | `90144086797` | May have empty sprints; skip if 0 tasks |
 | Trip Services | `90144315292` | Called "Draws"; lists named "Services N" |
 | Sell | `90147465093` | Standard sprint naming |
 | Testing / QA | `90140225326` | Cumulative numbering (e.g., Sprint 62) |
 | Loyalty Experience | `90147456951` | Themed names (e.g., "Avada Kedavra 3") |
 
-Use `get_lists` to find the two most recent sprint lists, then `get_tasks` on each with **both** `include_closed: true` **and** `subtasks: true`. Subtasks are required — a lot of real work lives under parent stories, and omitting them produces misleadingly empty sprint views (especially for the current sprint). When "All Teams" is selected, fetch lists and tasks for all teams in parallel.
+For all teams except Field Ops and Central Ops: use `get_lists` to find the current sprint list, then `get_tasks` on it with **both** `include_closed: true` **and** `subtasks: true`. Subtasks are required — a lot of real work lives under parent stories, and omitting them produces misleadingly empty sprint views. When "All Teams" is selected, fetch lists and tasks for all teams in parallel.
+
+### Step 2a: Field Ops / Central Ops Workaround (Sprint List Is Unreliable)
+
+**Known limitation:** in these two spaces, sprint lists are populated mostly via ClickUp's "task in multiple lists" feature — the actual work items are subtasks whose primary home is the Backlog or Epics list, added into the sprint list on top of that. The available ClickUp MCP tools (`get_tasks`, `search_tasks`, `get_task`) only return a task's *primary* list membership — the `locations` field that should expose secondary list membership comes back empty. In practice this means `get_tasks` on the sprint list returns almost nothing (e.g. Central Ops Sprint 18 shows `task_count: 12` in list metadata but `get_tasks` only returns 2 of them). There is currently no reliable tool call to enumerate a sprint's actual task list for these two teams — do not attempt to use the sprint list as a data source for them.
+
+**Workaround — pull from Backlog/Epics instead, filtered to active work:**
+
+1. Get the Backlog and Epics list IDs for the team (Field Ops: Backlog `80047745`, Epics `900601272813`; Central Ops: Backlog `901419180254`, Epics `901419180255`).
+2. Call `get_tasks` on each with `include_closed: true` and `subtasks: true`.
+3. Filter the results to statuses that indicate active-or-recently-completed work (e.g. in progress, in review, code review, blocked, done, closed). Discard not-started/unrefined statuses (open, to do, unrefined, specing) — those are backlog noise, not current work.
+4. Treat this filtered set as the proxy for "what's currently happening" for that team. It will not exactly match the official sprint roster count, and that's expected — do not try to reconcile counts.
+5. Skip Step 3 enrichment cross-checks against sprint membership for these two teams, since sprint membership itself isn't reliably knowable; enrich based on task content and status only.
 
 ### Step 3: Enrich Where Needed
 
@@ -115,7 +129,9 @@ Use exactly the two sections below. No additional headings, no tables of ticket 
 
 - Always begin with the Step 1 team selection prompt.
 - Always fetch with `subtasks: true` in addition to `include_closed: true`. Current-sprint views will look empty otherwise.
-- When "All Teams" is selected, parallelize: fetch sprint lists for all teams in one batch, then fetch tasks for all resulting lists in one batch.
+- Only the current sprint is in scope — never fetch or reference the prior sprint.
+- For Field Ops and Central Ops, always use the Step 2a Backlog/Epics workaround instead of the sprint list — do not attempt `get_tasks` on their sprint lists.
+- When "All Teams" is selected, parallelize: fetch sprint lists (or Backlog/Epics lists, for Field Ops/Central Ops) for all teams in one batch, then fetch tasks for all resulting lists in one batch.
 - Skip teams with no relevant work rather than including empty sections.
 - **Summary is short.** Target ~100 words, one paragraph. Executives read the first two sentences. If it feels long, cut — don't reorganize.
 - **Cross-Team Highlights** are terse one-liners. No originating-team prefix (it's redundant with Scope). No "Affects: ..." trailing clause (speculative and noisy). If nothing crosses team boundaries, say so in one line.
